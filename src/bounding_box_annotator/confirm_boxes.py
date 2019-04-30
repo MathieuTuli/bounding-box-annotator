@@ -65,7 +65,7 @@ class BoundingBoxAnnotator:
                                     resolution,
                                     class_filters)
 
-    def write_results(self, results: FrameAnnotations) -> None:
+    def write_results(self, results: FrameAnnotations) -> str:
         image_path = self.image_bank / f"{self.frame_counter}.jpg"
         annotation_path = self.annotation_file_bank / \
             f"{self.frame_counter}.txt"
@@ -80,6 +80,7 @@ class BoundingBoxAnnotator:
                         f",{obj.bbox.right},{obj.bbox.bottom},{image_width}," +
                         f"{image_height}\n")
         self.frame_counter += 1
+        return image_path
 
     def get_detections(self,
                        frame: np.ndarray,
@@ -120,6 +121,7 @@ class BoundingBoxAnnotator:
             while True:
                 r, frame = cap.read()
                 if not r:
+                    cap.release()
                     break
                 results = self.get_detections(frame, self.threshold)
                 if len(results.objects) == 0:
@@ -133,6 +135,7 @@ class BoundingBoxAnnotator:
                 self.write_results(results)
                 frame = self.draw_boxes(frame, results)
                 cv2.imshow("image", frame)
+                cv2.moveWindow("image", 20,20);
                 q = cv2.waitKey(1)
                 if q & 0xFF == ord('q'):
                     print("Stopping annotation generator")
@@ -142,6 +145,7 @@ class BoundingBoxAnnotator:
     def draw_new_box(self, frame: np.ndarray) -> Tuple[np.ndarray, str]:
         cv2.destroyAllWindows()
         cv2.namedWindow("clickable_image")
+        cv2.moveWindow("clickable_image", 20,20);
         cv2.setMouseCallback("clickable_image",
                              BoundingBoxAnnotator.record_click)
         output = "{class_name},{left},{top},{right},{bottom}," +\
@@ -158,7 +162,7 @@ class BoundingBoxAnnotator:
                 print("Press [y] to confirm box, else press any other key.")
                 key = cv2.waitKey(0)
                 if key & 0xFF == ord('y'):
-                    print("You press [y], creating new box annotation")
+                    print("You pressed [y], adding the new bounding box")
                     break
                 if key & 0xFF == ord('q'):
                     print("Quitting new box session")
@@ -197,6 +201,7 @@ class BoundingBoxAnnotator:
                                image_width=frame.shape[1],
                                image_height=frame.shape[0])
         REF_PTS = list()
+        cv2.destroyAllWindows()
         return frame, result
 
     def get_image_and_annotations(self, image) -> Tuple[np.ndarray,
@@ -215,6 +220,33 @@ class BoundingBoxAnnotator:
         annotations = annotations[1:]
         return frame, annotations, new_annotations, annotation_file_name
 
+    def dynamic_confirmation(self,) -> None:
+        self.load_object_detector()
+        print("loaded object detector")
+        for input_file in self.input_bank.iterdir():
+            print(f"processing {input_file}")
+            cap = cv2.VideoCapture(str(input_file))
+            frame_count = -1
+            while True:
+                r, frame = cap.read()
+                if not r:
+                    cap.release()
+                    break
+                results = self.get_detections(frame, self.threshold)
+                if len(results.objects) == 0:
+                    continue
+                frame_count += 1
+                if frame_count % self.frame_jump:
+                    continue
+                if not isinstance(results, FrameAnnotations):
+                    raise ValueError(
+                            "results were not of type 'FrameAnnotations'")
+                print("Got Detections\n\n")
+                image_path = self.write_results(results)
+                frame, annotations, new_annotations, annotation_file_name = \
+                        self.get_image_and_annotations(image_path)
+                self.confirm_box(frame, annotations, new_annotations, annotation_file_name)
+
     def confirm_boxes(self,) -> None:
         start = False
         for image in self.image_bank.iterdir():
@@ -225,63 +257,69 @@ class BoundingBoxAnnotator:
                 start = True
             if not start:
                 continue
-            for annotation in annotations:
-                annotation = annotation.strip()
-                annotation_str = annotation
-                frame_copy = frame.copy()
-                annotation = annotation.split(',')
-                if len(annotation) != 7:
-                    print(f"Annotation {annotation} is of bad format")
-                    continue
-                class_name, left, top, right, \
-                    bottom, width, height = annotation
-                single_box = FrameAnnotations(
-                        frame=frame,
-                        objects=[Object(class_name=class_name,
-                                        bbox=BBox(left=int(left),
-                                                  top=int(top),
-                                                  right=int(right),
-                                                  bottom=int(bottom),))],
-                        image_width=int(width),
-                        image_height=int(height),)
-                frame_copy = self.draw_boxes(frame_copy, single_box)
-                while True:
-                    cv2.imshow("image", frame_copy)
-                    print("Press [y] to confirm this box or [n] to delete it")
-                    print("Pres [q] to quit fully")
-                    key = cv2.waitKey(0)
-                    if key & 0xFF == ord('y'):
-                        print("Confirmed")
-                        new_annotations.append(annotation_str)
-                        frame = self.draw_boxes(frame, single_box)
-                        break
-                    elif key & 0xFF == ord('n'):
-                        print("Deleted")
-                        break
-                    elif key & 0xFF == ord('q'):
-                        print("Are you sure you want to quit [y]/[n]")
-                        while True:
-                            q = cv2.waitKey(0)
-                            if q & 0xFF == ord('y'):
-                                sys.exit(0)
-                            elif q & 0xFF == ord('n'):
-                                break
-            print("Done with generated annotations, now for custom")
-            while True:
-                cv2.imshow("image", frame)
-                print("Press [a] to add a new annotation or [q] to move to " +
-                      "next frame")
-                key = cv2.waitKey(0)
-                if key & 0xFF == ord('q'):
-                    print("Moving to next frame")
-                    break
-                if key & 0xFF == ord('a'):
-                    results = self.draw_new_box(frame)
-                    if results is not None:
-                        frame, new_box = results
-                        new_annotations.append(new_box)
+            self.confirm_box(frame, annotations, new_annotations, annotation_file_name)
 
-            self.write_new_results(annotation_file_name, new_annotations)
+    def confirm_box(self, frame, annotations, new_annotations, annotation_file_name) -> None:
+        for annotation in annotations:
+            annotation = annotation.strip()
+            annotation_str = annotation
+            frame_copy = frame.copy()
+            annotation = annotation.split(',')
+            if len(annotation) != 7:
+                print(f"Annotation {annotation} is of bad format")
+                continue
+            class_name, left, top, right, \
+                bottom, width, height = annotation
+            single_box = FrameAnnotations(
+                    frame=frame,
+                    objects=[Object(class_name=class_name,
+                                    bbox=BBox(left=int(left),
+                                              top=int(top),
+                                              right=int(right),
+                                              bottom=int(bottom),))],
+                    image_width=int(width),
+                    image_height=int(height),)
+            frame_copy = self.draw_boxes(frame_copy, single_box)
+            while True:
+                cv2.imshow("image", frame_copy)
+                cv2.moveWindow("image", 20,20);
+                print("Press [y] to confirm this box or [n] to delete it")
+                print("Pres [q] to fully quit the program.")
+                key = cv2.waitKey(0)
+                if key & 0xFF == ord('y'):
+                    print("Confirmed")
+                    new_annotations.append(annotation_str)
+                    frame = self.draw_boxes(frame, single_box)
+                    break
+                elif key & 0xFF == ord('n'):
+                    print("Deleted")
+                    break
+                elif key & 0xFF == ord('q'):
+                    print("Are you sure you want to quit [y]/[n]")
+                    while True:
+                        q = cv2.waitKey(0)
+                        if q & 0xFF == ord('y'):
+                            sys.exit(0)
+                        elif q & 0xFF == ord('n'):
+                            break
+        print("Done with generated annotations, now for custom if things were missed.")
+        while True:
+            cv2.imshow("image", frame)
+            cv2.moveWindow("image", 20,20);
+            print("Press [a] to add a new annotation or [n] to move to " +
+                  "next frame")
+            key = cv2.waitKey(0)
+            if key & 0xFF == ord('n'):
+                print("Moving to next frame")
+                break
+            if key & 0xFF == ord('a'):
+                results = self.draw_new_box(frame)
+                if results is not None:
+                    frame, new_box = results
+                    new_annotations.append(new_box)
+
+        self.write_new_results(annotation_file_name, new_annotations)
+        cv2.destroyAllWindows()
 
     def write_new_results(self, annotation_file_name: str,
                           new_annotations: List[str],) -> None:
@@ -308,9 +346,9 @@ parser.add_argument('--class-filters', default=['person'],
                     nargs="+", type=str)
 parser.add_argument('--input-bank', default='input',
                     type=str)
-parser.add_argument('--image-bank', default='images',
+parser.add_argument('--image-bank', default='data/images',
                     type=str)
-parser.add_argument('--annotation-file-bank', default='annotations',
+parser.add_argument('--annotation-file-bank', default='data/annotations',
                     type=str)
 parser.add_argument('--threshold', default=0.2,
                     type=int)
@@ -320,6 +358,9 @@ parser.add_argument('--process-inputs', dest='process_inputs',
                     action='store_true')
 parser.set_defaults(process_inputs=False)
 parser.add_argument('--confirm-boxes', dest='confirm_boxes',
+                    action='store_true')
+parser.set_defaults(confirm_boxes=False)
+parser.add_argument('--dynamic-confirmation', dest='dynamic_confirmation',
                     action='store_true')
 parser.set_defaults(confirm_boxes=False)
 parser.add_argument('--start-at', default='0.txt',
@@ -351,3 +392,5 @@ if __name__ == "__main__":
         annotator.process_inputs()
     if args.confirm_boxes:
         annotator.confirm_boxes()
+    if args.dynamic_confirmation:
+        annotator.dynamic_confirmation()
