@@ -1,15 +1,15 @@
 from __future__ import division
 
-import torch 
+import torch
 import random
 
 import numpy as np
 import cv2
 
 def confidence_filter(result, confidence):
-    conf_mask = (result[:,:,4] > confidence).float().unsqueeze(2)
-    result = result*conf_mask    
-    
+    conf_mask = (result[:, :, 4] > confidence).float().unsqueeze(2)
+    result = result*conf_mask
+
     return result
 
 def confidence_filter_cls(result, confidence):
