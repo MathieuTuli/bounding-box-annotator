@@ -221,7 +221,7 @@ class BoundingBoxAnnotator:
         return frame, annotations, new_annotations, annotation_file_name
 
     def dynamic_confirmation(self,) -> None:
-        self.load_object_detector()
+        # self.load_object_detector()
         print("loaded object detector")
         for input_file in self.input_bank.iterdir():
             print(f"processing {input_file}")
