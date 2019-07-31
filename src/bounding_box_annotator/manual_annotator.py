@@ -21,13 +21,11 @@ class ManualBoxAnnotator:
                  save_to: Path,
                  dataset: str,) -> None:
         self.input_bank = input_bank
-        if not save_to.is_dir():
-            save_to.mkdir(parents=True)
-        self.annotation_file_bank = save_to
-        self.confirm_directories()
+        self.save_to = save_to
         self.frame_counter = 0
         choices = {'sydney-house': self.write_results_sydney_house}
         self.write_results = choices[dataset]
+        self.build_directories()
 
     @staticmethod
     def record_click(event, x, y, flags, param):
@@ -37,20 +35,31 @@ class ManualBoxAnnotator:
         elif event == cv2.EVENT_LBUTTONUP:
             REF_PTS.append((x, y))
 
+    def build_directories(self):
+        if not self.save_to.is_dir():
+            self.save_to.mkdir(parents=True)
+        children = ['floor-plans']
+        for child in children:
+            new_folder = self.save_to / child
+            if not new_folder.is_dir():
+                new_folder.mkdir(parents=True)
+
     def write_results_sydney_house(self, house: str,
                                    results: FloorPlanAnnotation) -> None:
         save_dir = self.save_to / house
         save_dir.mkdir(parents=True, exist_ok=True)
         image_path = save_dir / f"{results.floor_num}.jpg"
-        cv2.imwrite(str(image_path), results.frame)
+        cv2.imwrite(str(image_path), results.floor_plan)
         annotation_path = save_dir / f"{results.floor_num}.txt"
+        print(results)
         with open(annotation_path, "w") as f:
             image_width = results.image_width
             image_height = results.image_height
             f.write("{class_name},{left},{top},{right}," +
                     "{bottom},{image_width},{image_height}\n")
             for room in results.rooms:
-                f.write(f"{room.class_name.name},{room.bbox.left}," +
+                print(room)
+                f.write(f"{room.class_name},{room.bbox.left}," +
                         f"{room.bbox.top},{room.bbox.right}," +
                         f"{room.bbox.bottom},{image_width},{image_height}\n")
 
@@ -104,19 +113,19 @@ class ManualBoxAnnotator:
 
         return ref_pts
 
-    def crop(self, frame: np.ndarray, save_to) -> np.ndarray:
+    def crop(self, frame: np.ndarray) -> np.ndarray:
         print('\n')
         print("CROPING")
         cv2.destroyAllWindows()
         cv2.namedWindow("clickable_image")
-        cv2.moveWindow("clickable_image", 500, 200)
+        cv2.moveWindow("clickable_image", 0, 0)
         cv2.setMouseCallback("clickable_image",
                              ManualBoxAnnotator.record_click)
         old_frame = frame.copy()
         while True:
             global REF_PTS
             if len(REF_PTS) == 2:
-                REF_PTS = self.get_tl_br(REF_PTS)
+                REF_PTS = self.conform_corners(REF_PTS)
                 cv2.imshow('clickable_image',
                            frame[REF_PTS[0][1]:REF_PTS[1][1],
                                  REF_PTS[0][0]:REF_PTS[1][0]])
@@ -137,6 +146,7 @@ class ManualBoxAnnotator:
                             break
                         except Exception:
                             continue
+                    REF_PTS = list()
                     return frame, current_floor  # result
                 else:
                     frame = old_frame.copy()
@@ -151,16 +161,15 @@ class ManualBoxAnnotator:
             self,
             frame: np.ndarray) -> Tuple[np.ndarray, str]:
         rooms = list()
-        original_frame = frame.copy()
         frame, floor_num = self.crop(frame)
+        original_frame = frame.copy()
         image_height, image_width, _ = frame.shape
         while True:
             cv2.destroyAllWindows()
             cv2.namedWindow("clickable_image")
+            cv2.moveWindow("clickable_image", 0, 0)
             cv2.setMouseCallback("clickable_image",
                                  ManualBoxAnnotator.record_click)
-            output = "{class_name},{left},{top},{right},{bottom}," +\
-                "{image_width},{image_height}"
             old_frame = frame.copy()
             print("Drawing new box")
             print("Press [q] at any time to quit this new box drawing session")
@@ -179,26 +188,27 @@ class ManualBoxAnnotator:
                         print(list(RoomType))
                         while True:
                             try:
-                                class_name = int(input("Class name: "))
+                                class_name = input("Class name: ")
+                                class_name = int(class_name)
                                 class_name = RoomType(class_name).name
+                                break
                             except Exception:
                                 print('Need a valid int')
-                                break
                         old_frame = frame
                         REF_PTS = self.conform_corners(REF_PTS)
-                        result = output.format(class_name=class_name,
-                                               left=REF_PTS[0][0],
-                                               top=REF_PTS[0][1],
-                                               right=REF_PTS[1][0],
-                                               bottom=REF_PTS[1][1],
-                                               image_width=frame.shape[1],
-                                               image_height=frame.shape[0])
+                        result = RoomAnnotation(class_name=class_name,
+                                                bbox=BBox(
+                                                    left=REF_PTS[0][0],
+                                                    top=REF_PTS[0][1],
+                                                    right=REF_PTS[1][0],
+                                                    bottom=REF_PTS[1][1]))
                         rooms.append(result)
+                        REF_PTS = list()
                         break
                     elif key & 0xFF == ord('q'):
                         print("Quitting")
-                        return old_frame, FloorPlanAnnotation(
-                            floor_num=0,
+                        return original_frame, FloorPlanAnnotation(
+                            floor_num=floor_num,
                             floor_plan=frame.copy(),
                             rooms=rooms, image_width=image_width,
                             image_height=image_height)
@@ -208,8 +218,8 @@ class ManualBoxAnnotator:
                     key = cv2.waitKey(1)
                     if key & 0xFF == ord('q'):
                         print("Quitting new box session")
-                        return old_frame, FloorPlanAnnotation(
-                            floor_num=0,
+                        return original_frame, FloorPlanAnnotation(
+                            floor_num=floor_num,
                             floor_plan=frame.copy(),
                             rooms=rooms, image_width=image_width,
                             image_height=image_height)
@@ -221,15 +231,22 @@ class ManualBoxAnnotator:
             image_height=image_height)
 
     def annotate_sydney_house(self,) -> None:
-        for image in self.image_bank:
+        for image in self.input_bank:
             print(image)
             frame = cv2.imread(str(image))
             frame_copy = frame.copy()
             height, width, channels = frame.shape
-            results = self.draw_boxes_sydney_house(frame_copy)
+            frame, results = self.draw_boxes_sydney_house(frame_copy)
             image_split = str(image).split('/')
-
             self.write_results(house=image_split[3], results=results)
+            while True:
+                x = input("More floors?: ")
+                if x == 'yes':
+                    frame, results = self.draw_boxes_sydney_house(frame_copy)
+                    image_split = str(image).split('/')
+                    self.write_results(house=image_split[3], results=results)
+                elif x == 'no':
+                    break
 
 
 if __name__ == "__main__":
