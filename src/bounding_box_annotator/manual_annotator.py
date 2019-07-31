@@ -211,7 +211,7 @@ class ManualBoxAnnotator:
                         print("Quitting")
                         return original_frame, FloorPlanAnnotation(
                             floor_num=floor_num,
-                            floor_plan=frame.copy(),
+                            floor_plan=original_frame.copy(),
                             rooms=rooms, image_width=image_width,
                             image_height=image_height)
                     REF_PTS = list()
@@ -223,13 +223,13 @@ class ManualBoxAnnotator:
                         print("Quitting new box session")
                         return original_frame, FloorPlanAnnotation(
                             floor_num=floor_num,
-                            floor_plan=frame.copy(),
+                            floor_plan=original_frame.copy(),
                             rooms=rooms, image_width=image_width,
                             image_height=image_height)
         REF_PTS = list()
         return original_frame, FloorPlanAnnotation(
             floor_num=floor_num,
-            floor_plan=frame.copy(),
+            floor_plan=original_frame.copy(),
             rooms=rooms, image_width=image_width,
             image_height=image_height)
 
@@ -237,8 +237,24 @@ class ManualBoxAnnotator:
         for image in self.input_bank:
             print(image)
             frame = cv2.imread(str(image))
-            frame_copy = frame.copy()
             height, width, channels = frame.shape
+            if height > 1080:
+                ratio = 1080 / height
+                frame = cv2.resize(frame, (int(width * ratio), 1080))
+            frame_copy = frame.copy()
+            skip = False
+            while True:
+                cv2.namedWindow('temp')
+                cv2.moveWindow("temp", 0, 0)
+                cv2.imshow('temp', frame_copy)
+                key = cv2.waitKey(0)
+                if key & 0xFF == ord('s'):
+                    skip = True
+                    break
+                if key & 0xFF == ord('n'):
+                    break
+            if skip:
+                continue
             frame, results = self.draw_boxes_sydney_house(frame_copy)
             image_split = str(image).split('/')
             self.write_results(house=image_split[3], results=results)
