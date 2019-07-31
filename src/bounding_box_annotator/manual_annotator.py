@@ -48,9 +48,9 @@ class ManualBoxAnnotator:
                                    results: FloorPlanAnnotation) -> None:
         save_dir = self.save_to / house
         save_dir.mkdir(parents=True, exist_ok=True)
-        image_path = save_dir / f"{results.floor_num}.jpg"
+        image_path = save_dir / f"floor_{results.floor_num}.jpg"
         cv2.imwrite(str(image_path), results.floor_plan)
-        annotation_path = save_dir / f"{results.floor_num}.txt"
+        annotation_path = save_dir / f"floor_{results.floor_num}.txt"
         print(results)
         with open(annotation_path, "w") as f:
             image_width = results.image_width
@@ -124,11 +124,12 @@ class ManualBoxAnnotator:
         old_frame = frame.copy()
         while True:
             global REF_PTS
-            if len(REF_PTS) == 2:
+            if len(REF_PTS) == 2 and REF_PTS[0] != REF_PTS[1]:
                 REF_PTS = self.conform_corners(REF_PTS)
                 cv2.imshow('clickable_image',
                            frame[REF_PTS[0][1]:REF_PTS[1][1],
                                  REF_PTS[0][0]:REF_PTS[1][0]])
+                cv2.moveWindow("clickable_image", 0, 0)
                 print('\n')
                 print("[y] to confirm")
                 print("[*] to decline")
@@ -167,7 +168,6 @@ class ManualBoxAnnotator:
         while True:
             cv2.destroyAllWindows()
             cv2.namedWindow("clickable_image")
-            cv2.moveWindow("clickable_image", 0, 0)
             cv2.setMouseCallback("clickable_image",
                                  ManualBoxAnnotator.record_click)
             old_frame = frame.copy()
@@ -180,12 +180,14 @@ class ManualBoxAnnotator:
                     cv2.rectangle(
                         frame, REF_PTS[0], REF_PTS[1], (0, 255, 0), 1)
                     cv2.imshow('clickable_image', frame)
+                    cv2.moveWindow("clickable_image", 0, 0)
                     print(
                         "Press [y] to confirm box, else press any other key.")
                     key = cv2.waitKey(0)
                     if key & 0xFF == ord('y'):
                         print("You press [y], creating new box annotation")
-                        print(list(RoomType))
+                        for i, r in enumerate(RoomType):
+                            print(f"{i + 1}: {r}")
                         while True:
                             try:
                                 class_name = input("Class name: ")
@@ -215,6 +217,7 @@ class ManualBoxAnnotator:
                     REF_PTS = list()
                 else:
                     cv2.imshow('clickable_image', frame)
+                    cv2.moveWindow("clickable_image", 0, 0)
                     key = cv2.waitKey(1)
                     if key & 0xFF == ord('q'):
                         print("Quitting new box session")

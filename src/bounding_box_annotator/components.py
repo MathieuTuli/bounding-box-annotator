@@ -24,11 +24,10 @@ class FrameAnnotations(NamedTuple):
 
 
 RoomType = enum.Enum('RoomType',
-                     [floor + room
-                      for room in ['bed', 'bath', 'kitchen', 'living',
-                                   'dining', 'hallway', 'garage',
-                                   'closet', 'other']
-                      for floor in ['main_', 'upper_', 'lower_']])
+                     ['staircase', 'entrance', 'laundry',
+                      'bed', 'bath', 'kitchen', 'living',
+                      'dining', 'hallway', 'garage',
+                      'closet', 'other'])
 
 
 class RoomAnnotation(NamedTuple):
