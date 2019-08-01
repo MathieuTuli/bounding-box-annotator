@@ -191,12 +191,26 @@ class ManualBoxAnnotator:
                     if key & 0xFF == ord('y'):
                         print("You press [y], creating new box annotation")
                         for i, r in enumerate(RoomType):
-                            print(f"{i + 1}: {r}")
+                            if i == 9:
+                                print(f"g: {r}")
+                            elif i == 10:
+                                print(f"c: {r}")
+                            elif i == 11:
+                                print(f"o: {r}")
+                            else:
+                                print(f"{i + 1}: {r}")
                         while True:
                             try:
                                 print("Class name?")
                                 key = cv2.waitKey(0)
-                                key = int(chr(key & 0xFF))
+                                if chr(key & 0xFF) == 'c':
+                                    key = 11
+                                elif chr(key & 0xFF) == 'g':
+                                    key = 10
+                                elif chr(key & 0xFF) == 'o':
+                                    key = 12
+                                else:
+                                    key = int(chr(key & 0xFF))
                                 class_name = int(key)
                                 class_name = RoomType(class_name).name
                                 print(f"{key} = {class_name}")
