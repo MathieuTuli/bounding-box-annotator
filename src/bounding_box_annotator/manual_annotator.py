@@ -140,8 +140,12 @@ class ManualBoxAnnotator:
                     frame = frame[REF_PTS[0][1]:REF_PTS[1][1],
                                   REF_PTS[0][0]:REF_PTS[1][0]]
                     while True:
-                        current_floor = input(
-                            "Current floor num [-2, -1, 0, 1, 2, ...]: ")
+                        # current_floor = input(
+                        #     "Current floor num [-2, -1, 0, 1, 2, ...]: ")
+                        print("Current floor num [-2, -1, 0, 1, 2, ...]?")
+                        key = cv2.waitKey(0)
+                        current_floor = int(chr(key & 0xFF))
+                        print(f"Floor = {current_floor}")
                         try:
                             current_floor = int(current_floor)
                             break
@@ -190,9 +194,12 @@ class ManualBoxAnnotator:
                             print(f"{i + 1}: {r}")
                         while True:
                             try:
-                                class_name = input("Class name: ")
-                                class_name = int(class_name)
+                                print("Class name?")
+                                key = cv2.waitKey(0)
+                                key = int(chr(key & 0xFF))
+                                class_name = int(key)
                                 class_name = RoomType(class_name).name
+                                print(f"{key} = {class_name}")
                                 break
                             except Exception:
                                 print('Need a valid int')
