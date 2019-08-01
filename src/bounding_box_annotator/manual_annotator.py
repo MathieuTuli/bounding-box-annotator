@@ -144,7 +144,10 @@ class ManualBoxAnnotator:
                         #     "Current floor num [-2, -1, 0, 1, 2, ...]: ")
                         print("Current floor num [-2, -1, 0, 1, 2, ...]?")
                         key = cv2.waitKey(0)
-                        current_floor = int(chr(key & 0xFF))
+                        if chr(key & 0xFF) == 'l':
+                            current_floor = -1
+                        else:
+                            current_floor = chr(key & 0xFF)
                         print(f"Floor = {current_floor}")
                         try:
                             current_floor = int(current_floor)
