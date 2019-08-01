@@ -26,6 +26,7 @@ class ManualBoxAnnotator:
         choices = {'sydney-house': self.write_results_sydney_house}
         self.write_results = choices[dataset]
         self.build_directories()
+        self.counter = 0
 
     @staticmethod
     def record_click(event, x, y, flags, param):
@@ -51,14 +52,12 @@ class ManualBoxAnnotator:
         image_path = save_dir / f"floor_{results.floor_num}.jpg"
         cv2.imwrite(str(image_path), results.floor_plan)
         annotation_path = save_dir / f"floor_{results.floor_num}.txt"
-        print(results)
         with open(annotation_path, "w") as f:
             image_width = results.image_width
             image_height = results.image_height
             f.write("{class_name},{left},{top},{right}," +
                     "{bottom},{image_width},{image_height}\n")
             for room in results.rooms:
-                print(room)
                 f.write(f"{room.class_name},{room.bbox.left}," +
                         f"{room.bbox.top},{room.bbox.right}," +
                         f"{room.bbox.bottom},{image_width},{image_height}\n")
@@ -259,7 +258,8 @@ class ManualBoxAnnotator:
 
     def annotate_sydney_house(self,) -> None:
         for image in self.input_bank:
-            print(image)
+            self.counter += 1
+            print(f"{self.counter}: {image}")
             frame = cv2.imread(str(image))
             height, width, channels = frame.shape
             if height > 1080:
