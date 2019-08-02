@@ -8,3 +8,5 @@ dataset*
 darknet-training-results
 sydney-house
 processed_houses
+left_off.txt
+
