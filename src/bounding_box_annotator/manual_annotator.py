@@ -259,7 +259,7 @@ class ManualBoxAnnotator:
     def annotate_sydney_house(self,) -> None:
         for image in self.input_bank:
             self.counter += 1
-            print(f"{self.counter}: {image}")
+            print(f"{self.counter}/{len(self.input_bank)}: {image}")
             frame = cv2.imread(str(image))
             height, width, channels = frame.shape
             if height > 1080:
