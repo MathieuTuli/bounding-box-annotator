@@ -3,23 +3,30 @@
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Tuple, List
+import importlib.resources
 import shutil
 import sys
 import os
 
+import scipy.io
 import numpy as np
 import cv2
 
-from components import RoomType, RoomAnnotation, FloorPlanAnnotation, BBox
+from mapsdg.google_maps_api import GoogleMapsAPI
+from mapsdg.components import LatLon
+import mapsdg
+
+from .components import RoomType, RoomAnnotation, FloorPlanAnnotation, BBox
 
 REF_PTS = list()
+API_KEY = importlib.resources.read_text('bounding_box_annotator', '.api_key')
 
 
 class ManualBoxAnnotator:
     def __init__(self,
                  input_bank: List[Path],
                  save_to: Path,
-                 dataset: str,) -> None:
+                 dataset: str) -> None:
         self.input_bank = input_bank
         self.save_to = save_to
         self.frame_counter = 0
@@ -91,6 +98,9 @@ class ManualBoxAnnotator:
     def conform_corners(
             self,
             ref_pts: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        '''
+        Conform to TL BR coordinates
+        '''
         # This would happen if you click right and drag left to draw box
         # drawn rt to lb
         if ref_pts[0][0] > ref_pts[1][0] and ref_pts[0][1] < ref_pts[1][1]:
@@ -291,17 +301,167 @@ class ManualBoxAnnotator:
                 elif x == 'no':
                     break
 
+    def align_boxes_with_sat_image(self, sydney_data_loc: Path) -> None:
+        gapi = GoogleMapsAPI(key=API_KEY)
+        for house_folder in self.input_bank:
+            house_num = str(house_folder).split('/')[-1]
+            house = sydney_data_loc / house_num
+            mat = scipy.io.loadmat(str(house / 'location_data.mat'))
+            url = gapi.get_static_image_url(addr=LatLon(
+                lat=mat['location_data'][0][0][0][0][0],
+                lon=mat['location_data'][0][0][1][0][0]),
+                image_zoom=20)
+            image = mapsdg.get_image_from_url(url)
+            if image is not None:
+                image = self.rotate_sat_image(image)
+                self.save_sat_image(image, house_num)
+                self.fit_boxes(image, house_folder)
+
+    def save_sat_image(self, image: np.ndarray, house_num: str) -> None:
+        pass
+
+    def fit_boxes(self, image: np.ndarray, house_folder: Path) -> None:
+        for _file in house_folder.iterdir():
+            print(_file)
+            if _file.suffix == '.txt':
+                left_most = 100000
+                top_most = 100000
+                right_most = 100000
+                bottom_most = 100000
+                with open(_file, 'r') as f:
+                    lines = f.readlines()[1:]
+                boxes = list()
+                for line in lines:
+                    class_name, left, top, right, bottom, w, h = \
+                        line.split(',')
+                    left = int(left)
+                    top = int(top)
+                    bottom = int(bottom)
+                    right = int(right)
+                    if left < left_most:
+                        left_most = left
+                    if top < top_most:
+                        top_most = top
+                    if right < right_most:
+                        right_most = right
+                    if bottom < bottom_most:
+                        bottom_most = bottom
+                    boxes.append((left, top, right, bottom))
+                image_clean = image.copy()
+                scale_w = 1.1
+                scale_h = 1.1
+                while True:
+                    image = image_clean.copy()
+                    height, width, _ = image.shape
+                    for box in boxes:
+                        left, top, right, bottom = box
+                        cv2.rectangle(image, (left, top), (right, bottom),
+                                      color=(0, 0, 255), thickness=1)
+                    cv2.imshow('', image)
+                    key = cv2.waitKey(0)
+                    if chr(key & 0xFF) == 'y':
+                        cv2.destroyAllWindows()
+                        return boxes
+                    new_boxes = list()
+                    for box in boxes:
+                        left, top, right, bottom = box
+                        if chr(key & 0xFF) == 'k':
+                            if top == top_most:
+                                top_most -= 1
+                            if bottom == bottom_most:
+                                bottom -= 1
+                            top -= 1
+                            bottom -= 1
+                        elif chr(key & 0xFF) == 'j':
+                            if top == top_most:
+                                top_most += 1
+                            if bottom == bottom_most:
+                                bottom += 1
+                            top += 1
+                            bottom += 1
+                        elif chr(key & 0xFF) == 'h':
+                            if left == left_most:
+                                left_most -= 1
+                            if right == right_most:
+                                right_most -= 1
+                            left -= 1
+                            right -= 1
+                        elif chr(key & 0xFF) == 'l':
+                            if left == left_most:
+                                left_most += 1
+                            if right == right_most:
+                                right += 1
+                            left += 1
+                            right += 1
+                        elif chr(key & 0xFF) == 'w':
+                            top = int(top * scale_h)
+                            bottom = int(bottom * scale_h)
+                        elif chr(key & 0xFF) == 's':
+                            top = int(top / scale_h)
+                            bottom = int(bottom / scale_h)
+                        elif chr(key & 0xFF) == 'a':
+                            left = int(left * scale_w)
+                            right = int(right * scale_w)
+                        elif chr(key & 0xFF) == 'd':
+                            left = int(left / scale_w)
+                            right = int(right / scale_w)
+                        new_boxes.append((left, top, right, bottom))
+                    boxes = new_boxes
+
+    def rotate_sat_image(self, image: np.ndarray) -> np.ndarray:
+        # cv2.destroyAllWindows()
+        # cv2.namedWindow("clickable_image")
+        # cv2.moveWindow("clickable_image", 0, 0)
+        # cv2.setMouseCallback("clickable_image",
+        #                      ManualBoxAnnotator.record_click)
+        original_image = image.copy()
+        image_clean = image.copy()
+        rotation = 0
+        while True:
+            rows, cols, _ = image.shape
+            for i in range(0, cols, 20):
+                cv2.line(image, (i, 0), (i, rows), (0, 0, 255), thickness=1)
+            for j in range(0, rows, 20):
+                cv2.line(image, (0, j), (cols, j), (0, 0, 255), thickness=1)
+            cv2.imshow("", image)
+            key = cv2.waitKey(0)
+            if chr(key & 0xFF) == 'k':
+                rotation += 0.2
+            elif chr(key & 0xFF) == 'j':
+                rotation -= 0.2
+            elif chr(key & 0xFF) == 'y':
+                cv2.destroyAllWindows()
+                return image_clean
+            elif chr(key & 0xFF) == 'q':
+                cv2.destroyAllWindows()
+                return original_image
+            matrix = cv2.getRotationMatrix2D((cols/2, rows/2), rotation, 1)
+            image = cv2.warpAffine(original_image, matrix, (cols, rows))
+            image_clean = cv2.warpAffine(original_image, matrix, (cols, rows))
+
 
 if __name__ == "__main__":
-    houses_folder = Path('sydney-house/rent_crawler/goodhouses')
+    # houses_folder = Path('sydney-house/rent_crawler/goodhouses')
+    # houses = list()
+    # for house_folder in houses_folder.iterdir():
+    #     for house in house_folder.iterdir():
+    #         if 'floorplan.png' in str(house) and house.suffix == '.png':
+    #             houses.append(house)
+
+    # annotator = ManualBoxAnnotator(
+    #     houses,
+    #     Path('processed_houses/floor-plans'),
+    #     dataset='sydney-house')
+    # annotator.annotate_sydney_house()
+
+    houses_folder = Path('processed_houses/floor-plans/')
     houses = list()
     for house_folder in houses_folder.iterdir():
-        for house in house_folder.iterdir():
-            if 'floorplan.png' in str(house) and house.suffix == '.png':
-                houses.append(house)
+        houses.append(house_folder)
 
     annotator = ManualBoxAnnotator(
         houses,
-        Path('processed_houses/floor-plans'),
+        Path('final_dataset/'),
         dataset='sydney-house')
-    annotator.annotate_sydney_house()
+    annotator.align_boxes_with_sat_image(
+        Path('sydney-house/rent_crawler/goodhouses'))
