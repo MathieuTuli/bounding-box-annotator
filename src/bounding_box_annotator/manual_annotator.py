@@ -46,7 +46,7 @@ class ManualBoxAnnotator:
     def build_directories(self):
         if not self.save_to.is_dir():
             self.save_to.mkdir(parents=True)
-        children = ['floor-plans']
+        children = []
         for child in children:
             new_folder = self.save_to / child
             if not new_folder.is_dir():
@@ -314,27 +314,76 @@ class ManualBoxAnnotator:
             image = mapsdg.get_image_from_url(url)
             if image is not None:
                 image = self.rotate_zoom_sat_image(image)
-                self.save_sat_image(image, house_num)
-                self.fit_boxes(image, house_folder)
+                boxes = self.fit_boxes(image, house_folder)
+                self.save_aligned_boxes(image, boxes, house_num)
 
-    def save_sat_image(self, image: np.ndarray, house_num: str) -> None:
-        pass
+    def save_aligned_boxes(
+            self,
+            image: np.ndarray,
+            boxes: List[Tuple[str, int, int, int, int, int, int]],
+            house_num: str) -> None:
+        yolo_classes = [floor + "_" + room
+                        for floor in ['basement', 'main',
+                                      'first', 'second']
+                        for room in ['staircase', 'entrance', 'laundry',
+                                     'bed', 'bath', 'kitchen', 'living',
+                                     'dining', 'hallway', 'garage',
+                                     'closet', 'other']]
+        save_dir = self.save_to / house_num
+        save_dir.mkdir(parents=True, exist_ok=True)
+        image_path = save_dir / f"{house_num}.jpg"
+        cv2.imwrite(str(image_path), image)
+        annotation_path = save_dir / f"{house_num}.txt"
+        with open(annotation_path, "w") as f:
+            image_height, image_width, _ = image.shape
+            f.write("{class_name},{left},{top},{right}," +
+                    "{bottom},{image_width},{image_height}\n")
+            for box in boxes:
+                class_name, left, top, right, bottom, w, h = box
+                f.write(f"{class_name},{left}," +
+                        f"{top},{right}," +
+                        f"{bottom},{image_width},{image_height}\n")
+        annotation_path = save_dir / f"{house_num}_yolo.txt"
+        with open(annotation_path, "w") as f:
+            image_height, image_width, _ = image.shape
+            for box in boxes:
+                class_name, left, top, right, bottom, w, h = box
+                left = float(left)
+                top = float(top)
+                right = float(right)
+                bottom = float(bottom)
+                image_width = float(image_width)
+                image_height = float(image_height)
+                center_x = ((left + right) / 2) / image_width
+                center_y = ((top + bottom) / 2) / image_height
+                width = (right - left) / image_width
+                height = (bottom - top) / image_height
+                f.write(f"{yolo_classes.index(class_name)} {center_x} " +
+                        f"{center_y} {width} " +
+                        f"{height}\n")
 
     def fit_boxes(self, image: np.ndarray, house_folder: Path) -> None:
+        image_h, image_w, _ = image.shape
         for _file in house_folder.iterdir():
             print(_file)
             if _file.suffix == '.txt':
+                if 'floor_0' in str(_file):
+                    floor = 'main'
+                elif 'floor_1' in str(_file):
+                    floor = 'first'
+                elif 'floor_2' in str(_file):
+                    floor = 'second'
+                elif 'floor_-1' in str(_file):
+                    floor = 'basement'
                 with open(_file, 'r') as f:
                     lines = f.readlines()[1:]
                 boxes = list()
                 for line in lines:
                     class_name, left, top, right, bottom, w, h = \
                         line.split(',')
-                    left = int(left)
-                    top = int(top)
-                    bottom = int(bottom)
-                    right = int(right)
-                    boxes.append((left, top, right, bottom))
+                    boxes.append((f"{floor}_{class_name}",
+                                  int(left), int(top), int(right), int(bottom),
+                                  int(w), int(h)))
                 image_clean = image.copy()
                 scale_w = 1.05
                 scale_h = 1.05
@@ -342,7 +391,7 @@ class ManualBoxAnnotator:
                     image = image_clean.copy()
                     height, width, _ = image.shape
                     for box in boxes:
-                        left, top, right, bottom = box
+                        class_name, left, top, right, bottom, w, h = box
                         cv2.rectangle(image, (left, top), (right, bottom),
                                       color=(0, 0, 255), thickness=1)
                     cv2.imshow('', image)
@@ -352,7 +401,7 @@ class ManualBoxAnnotator:
                         return boxes
                     new_boxes = list()
                     for box in boxes:
-                        left, top, right, bottom = box
+                        class_name, left, top, right, bottom, w, h = box
                         if chr(key & 0xFF) == 'k':
                             top -= 3
                             bottom -= 3
@@ -377,7 +426,8 @@ class ManualBoxAnnotator:
                         elif chr(key & 0xFF) == 'd':
                             left = int(left * scale_w)
                             right = int(right * scale_w)
-                        new_boxes.append((left, top, right, bottom))
+                        new_boxes.append((class_name, left, top, right, bottom,
+                                          image_w, image_h))
                     boxes = new_boxes
 
     def rotate_zoom_sat_image(self, image: np.ndarray) -> np.ndarray:
@@ -409,13 +459,13 @@ class ManualBoxAnnotator:
             elif chr(key & 0xFF) == 'x':
                 scale -= 0.1
             elif chr(key & 0xFF) == 'w':
-                translation_y -= 2
+                translation_y += 4
             elif chr(key & 0xFF) == 's':
-                translation_y += 2
+                translation_y -= 4
             elif chr(key & 0xFF) == 'a':
-                translation_x += 2
+                translation_x += 4
             elif chr(key & 0xFF) == 'd':
-                translation_x -= 2
+                translation_x -= 4
             elif chr(key & 0xFF) == 'y':
                 cv2.destroyAllWindows()
                 return image_clean
