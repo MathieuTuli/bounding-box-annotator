@@ -313,7 +313,7 @@ class ManualBoxAnnotator:
                 image_zoom=20)
             image = mapsdg.get_image_from_url(url)
             if image is not None:
-                image = self.rotate_sat_image(image)
+                image = self.rotate_zoom_sat_image(image)
                 self.save_sat_image(image, house_num)
                 self.fit_boxes(image, house_folder)
 
@@ -324,10 +324,6 @@ class ManualBoxAnnotator:
         for _file in house_folder.iterdir():
             print(_file)
             if _file.suffix == '.txt':
-                left_most = 100000
-                top_most = 100000
-                right_most = 100000
-                bottom_most = 100000
                 with open(_file, 'r') as f:
                     lines = f.readlines()[1:]
                 boxes = list()
@@ -338,18 +334,10 @@ class ManualBoxAnnotator:
                     top = int(top)
                     bottom = int(bottom)
                     right = int(right)
-                    if left < left_most:
-                        left_most = left
-                    if top < top_most:
-                        top_most = top
-                    if right < right_most:
-                        right_most = right
-                    if bottom < bottom_most:
-                        bottom_most = bottom
                     boxes.append((left, top, right, bottom))
                 image_clean = image.copy()
-                scale_w = 1.1
-                scale_h = 1.1
+                scale_w = 1.05
+                scale_h = 1.05
                 while True:
                     image = image_clean.copy()
                     height, width, _ = image.shape
@@ -366,33 +354,17 @@ class ManualBoxAnnotator:
                     for box in boxes:
                         left, top, right, bottom = box
                         if chr(key & 0xFF) == 'k':
-                            if top == top_most:
-                                top_most -= 1
-                            if bottom == bottom_most:
-                                bottom -= 1
-                            top -= 1
-                            bottom -= 1
+                            top -= 3
+                            bottom -= 3
                         elif chr(key & 0xFF) == 'j':
-                            if top == top_most:
-                                top_most += 1
-                            if bottom == bottom_most:
-                                bottom += 1
-                            top += 1
-                            bottom += 1
+                            top += 3
+                            bottom += 3
                         elif chr(key & 0xFF) == 'h':
-                            if left == left_most:
-                                left_most -= 1
-                            if right == right_most:
-                                right_most -= 1
-                            left -= 1
-                            right -= 1
+                            left -= 3
+                            right -= 3
                         elif chr(key & 0xFF) == 'l':
-                            if left == left_most:
-                                left_most += 1
-                            if right == right_most:
-                                right += 1
-                            left += 1
-                            right += 1
+                            left += 3
+                            right += 3
                         elif chr(key & 0xFF) == 'w':
                             top = int(top * scale_h)
                             bottom = int(bottom * scale_h)
@@ -400,15 +372,15 @@ class ManualBoxAnnotator:
                             top = int(top / scale_h)
                             bottom = int(bottom / scale_h)
                         elif chr(key & 0xFF) == 'a':
-                            left = int(left * scale_w)
-                            right = int(right * scale_w)
-                        elif chr(key & 0xFF) == 'd':
                             left = int(left / scale_w)
                             right = int(right / scale_w)
+                        elif chr(key & 0xFF) == 'd':
+                            left = int(left * scale_w)
+                            right = int(right * scale_w)
                         new_boxes.append((left, top, right, bottom))
                     boxes = new_boxes
 
-    def rotate_sat_image(self, image: np.ndarray) -> np.ndarray:
+    def rotate_zoom_sat_image(self, image: np.ndarray) -> np.ndarray:
         # cv2.destroyAllWindows()
         # cv2.namedWindow("clickable_image")
         # cv2.moveWindow("clickable_image", 0, 0)
@@ -417,6 +389,9 @@ class ManualBoxAnnotator:
         original_image = image.copy()
         image_clean = image.copy()
         rotation = 0
+        scale = 1
+        translation_x = 0
+        translation_y = 0
         while True:
             rows, cols, _ = image.shape
             for i in range(0, cols, 20):
@@ -429,6 +404,18 @@ class ManualBoxAnnotator:
                 rotation += 0.2
             elif chr(key & 0xFF) == 'j':
                 rotation -= 0.2
+            elif chr(key & 0xFF) == 'z':
+                scale += 0.1
+            elif chr(key & 0xFF) == 'x':
+                scale -= 0.1
+            elif chr(key & 0xFF) == 'w':
+                translation_y -= 2
+            elif chr(key & 0xFF) == 's':
+                translation_y += 2
+            elif chr(key & 0xFF) == 'a':
+                translation_x += 2
+            elif chr(key & 0xFF) == 'd':
+                translation_x -= 2
             elif chr(key & 0xFF) == 'y':
                 cv2.destroyAllWindows()
                 return image_clean
@@ -438,6 +425,15 @@ class ManualBoxAnnotator:
             matrix = cv2.getRotationMatrix2D((cols/2, rows/2), rotation, 1)
             image = cv2.warpAffine(original_image, matrix, (cols, rows))
             image_clean = cv2.warpAffine(original_image, matrix, (cols, rows))
+
+            image = cv2.resize(image, None, fx=scale, fy=scale,
+                               interpolation=cv2.INTER_CUBIC)
+            image_clean = cv2.resize(image_clean, None, fx=scale, fy=scale,
+                                     interpolation=cv2.INTER_CUBIC)
+
+            matrix = np.float32([[1, 0, translation_x], [0, 1, translation_y]])
+            image = cv2.warpAffine(image, matrix, (cols, rows))
+            image_clean = cv2.warpAffine(image_clean, matrix, (cols, rows))
 
 
 if __name__ == "__main__":
