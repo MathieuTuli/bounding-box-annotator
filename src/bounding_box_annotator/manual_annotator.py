@@ -303,18 +303,34 @@ class ManualBoxAnnotator:
 
     def align_boxes_with_sat_image(self, sydney_data_loc: Path) -> None:
         gapi = GoogleMapsAPI(key=API_KEY)
+        counter = 0
         for house_folder in self.input_bank:
             house_num = str(house_folder).split('/')[-1]
             house = sydney_data_loc / house_num
             mat = scipy.io.loadmat(str(house / 'location_data.mat'))
+            floor_plan = cv2.imread(str(house / 'floorplan.png'))
             url = gapi.get_static_image_url(addr=LatLon(
                 lat=mat['location_data'][0][0][0][0][0],
                 lon=mat['location_data'][0][0][1][0][0]),
                 image_zoom=20)
             image = mapsdg.get_image_from_url(url)
             if image is not None:
+                print(f"{counter} / {len(self.input_bank)}")
+                counter += 1
+                skip = False
+                while True:
+                    cv2.imshow('', image)
+                    key = cv2.waitKey(0)
+                    if chr(key & 0xFF) == 's':
+                        skip = True
+                        break
+                    if chr(key & 0xFF) == 'y':
+                        break
+                if skip:
+                    continue
+
                 image = self.rotate_zoom_sat_image(image)
-                boxes = self.fit_boxes(image, house_folder)
+                boxes = self.fit_boxes(image, house_folder, floor_plan)
                 self.save_aligned_boxes(image, boxes, house_num)
 
     def save_aligned_boxes(
@@ -362,11 +378,16 @@ class ManualBoxAnnotator:
                         f"{center_y} {width} " +
                         f"{height}\n")
 
-    def fit_boxes(self, image: np.ndarray, house_folder: Path) -> None:
+    def fit_boxes(self, image: np.ndarray,
+                  house_folder: Path, floor_plan: np.ndarray) -> None:
         image_h, image_w, _ = image.shape
         for _file in house_folder.iterdir():
             print(_file)
             if _file.suffix == '.txt':
+                cv2.destroyAllWindows()
+                cv2.namedWindow("clickable_image")
+                cv2.moveWindow("clickable_image", 0, 0)
+                cv2.imshow('clickable_image', floor_plan)
                 if 'floor_0' in str(_file):
                     floor = 'main'
                 elif 'floor_1' in str(_file):
@@ -392,13 +413,16 @@ class ManualBoxAnnotator:
                     height, width, _ = image.shape
                     for box in boxes:
                         class_name, left, top, right, bottom, w, h = box
+                        color = (0, 0, 255)
+                        if 'staircase' in class_name:
+                            color = (255, 0, 0)
                         cv2.rectangle(image, (left, top), (right, bottom),
-                                      color=(0, 0, 255), thickness=1)
+                                      color=color, thickness=1)
                     cv2.imshow('', image)
                     key = cv2.waitKey(0)
                     if chr(key & 0xFF) == 'y':
                         cv2.destroyAllWindows()
-                        return boxes
+                        break
                     new_boxes = list()
                     for box in boxes:
                         class_name, left, top, right, bottom, w, h = box
@@ -429,6 +453,7 @@ class ManualBoxAnnotator:
                         new_boxes.append((class_name, left, top, right, bottom,
                                           image_w, image_h))
                     boxes = new_boxes
+        return boxes
 
     def rotate_zoom_sat_image(self, image: np.ndarray) -> np.ndarray:
         # cv2.destroyAllWindows()
