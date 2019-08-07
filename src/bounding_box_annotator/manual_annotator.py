@@ -309,6 +309,10 @@ class ManualBoxAnnotator:
             house = sydney_data_loc / house_num
             mat = scipy.io.loadmat(str(house / 'location_data.mat'))
             floor_plan = cv2.imread(str(house / 'floorplan.png'))
+            height, width, channels = floor_plan.shape
+            if height > 1080:
+                ratio = 1080 / height
+                floor_plan = cv2.resize(floor_plan, (int(width * ratio), 1080))
             url = gapi.get_static_image_url(addr=LatLon(
                 lat=mat['location_data'][0][0][0][0][0],
                 lon=mat['location_data'][0][0][1][0][0]),
@@ -318,6 +322,10 @@ class ManualBoxAnnotator:
                 print(f"{counter} / {len(self.input_bank)}")
                 counter += 1
                 skip = False
+                if counter < 63:
+                    continue
+                # files = [x for x in house_folder.iterdir() if x.is_file()]
+                # if len(files) <= 2:
                 while True:
                     cv2.imshow('', image)
                     key = cv2.waitKey(0)
@@ -329,7 +337,7 @@ class ManualBoxAnnotator:
                 if skip:
                     continue
 
-                image = self.rotate_zoom_sat_image(image)
+                image = self.rotate_zoom_sat_image(image, floor_plan)
                 boxes = self.fit_boxes(image, house_folder, floor_plan)
                 self.save_aligned_boxes(image, boxes, house_num)
 
@@ -337,7 +345,7 @@ class ManualBoxAnnotator:
             self,
             image: np.ndarray,
             boxes: List[Tuple[str, int, int, int, int, int, int]],
-            house_num: str) -> None:
+            house_num: str,) -> None:
         yolo_classes = [floor + "_" + room
                         for floor in ['basement', 'main',
                                       'first', 'second']
@@ -380,6 +388,7 @@ class ManualBoxAnnotator:
 
     def fit_boxes(self, image: np.ndarray,
                   house_folder: Path, floor_plan: np.ndarray) -> None:
+        all_boxes = list()
         image_h, image_w, _ = image.shape
         for _file in house_folder.iterdir():
             print(_file)
@@ -453,9 +462,11 @@ class ManualBoxAnnotator:
                         new_boxes.append((class_name, left, top, right, bottom,
                                           image_w, image_h))
                     boxes = new_boxes
-        return boxes
+                all_boxes += boxes
+        return all_boxes
 
-    def rotate_zoom_sat_image(self, image: np.ndarray) -> np.ndarray:
+    def rotate_zoom_sat_image(self, image: np.ndarray,
+                              floor_plan: np.ndarray) -> np.ndarray:
         # cv2.destroyAllWindows()
         # cv2.namedWindow("clickable_image")
         # cv2.moveWindow("clickable_image", 0, 0)
@@ -467,6 +478,9 @@ class ManualBoxAnnotator:
         scale = 1
         translation_x = 0
         translation_y = 0
+        cv2.namedWindow("clickable_image")
+        cv2.moveWindow("clickable_image", 0, 0)
+        cv2.imshow('clickable_image', floor_plan)
         while True:
             rows, cols, _ = image.shape
             for i in range(0, cols, 20):
@@ -479,6 +493,10 @@ class ManualBoxAnnotator:
                 rotation += 0.2
             elif chr(key & 0xFF) == 'j':
                 rotation -= 0.2
+            elif chr(key & 0xFF) == '[':
+                rotation += 1
+            elif chr(key & 0xFF) == ']':
+                rotation -= 1
             elif chr(key & 0xFF) == 'z':
                 scale += 0.1
             elif chr(key & 0xFF) == 'x':
